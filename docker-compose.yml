@@ -1,0 +1,21 @@
+# VPS deployment: Caddy terminates HTTPS (automatic Let's Encrypt) and proxies to the server.
+# 1. Point a DNS A record at the VPS.  2. cp .env.example .env and fill it in.
+# 3. DOMAIN=mcp.example.com docker compose up -d
+services:
+  instabox-mcp:
+    image: ghcr.io/jonchianggh/instabox-mcp:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    command: caddy reverse-proxy --from ${DOMAIN:?set DOMAIN} --to instabox-mcp:3000
+    volumes: [caddy_data:/data]
+    depends_on: [instabox-mcp]
+
+volumes:
+  caddy_data:
