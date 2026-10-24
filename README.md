@@ -14,10 +14,24 @@ single-user OAuth login, so connecting a client is: paste the URL → enter your
 | Commands & files | `run_command` (with `background` mode), `read_file`, `write_file` |
 | Snapshots | `list_snapshots`, `create_snapshot`, `delete_snapshot` |
 | Public ports | `publish_port`, `list_ports`, `unpublish_port` |
+| Desktop (computer use) | `desktop_start`, `desktop_status`, `desktop_screenshot`, `desktop_action`, `desktop_cursor_position`, `desktop_stream_url`, `desktop_revoke_streams`, `desktop_takeover`, `desktop_handback` |
 
 Lifecycle tools wait up to ~45s (web clients time out around a minute) and otherwise return the
 operation ID to follow with `get_operation`. Long commands should use `run_command` with
 `background: true`, which logs to `~/.mcp-jobs/<job>.log` in the machine.
+
+## Computer use
+
+Machines have an optional Linux desktop (Xfce + Chromium). The model can see and drive it:
+
+1. `desktop_start`: installs the desktop on first use (~30s, once) and starts it.
+2. `desktop_action` with `open_url`, `click`, `double_click`, `right_click`, `move`, `drag`,
+   `scroll`, `type` or `key` (e.g. `ctrl+l`). It returns a screenshot afterwards by default,
+   so each step is one round trip.
+3. `desktop_screenshot` any time. Images are JPEG by default (`format: "png"` for sharp text).
+
+`desktop_stream_url` gives you a live link to watch along in your own browser (view-only by
+default). Input runs through `xdotool` on display `:1`, the same way the official SDK does it.
 
 ## Configuration
 
