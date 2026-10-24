@@ -7,8 +7,9 @@ import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middlew
 import { config } from "./config.js";
 import { provider, passwordMatches, issueAuthorizationCode, loginPage } from "./auth.js";
 import { registerTools } from "./tools.js";
+import { registerDesktopTools } from "./desktop.js";
 
-const VERSION = process.env.APP_VERSION || "0.1.0";
+const VERSION = process.env.APP_VERSION || "0.2.0";
 const issuerUrl = new URL(config.publicUrl);
 const mcpUrl = new URL("/mcp", config.publicUrl);
 
@@ -63,6 +64,7 @@ const auth = requireBearerAuth({ verifier: provider, resourceMetadataUrl: getOAu
 app.post("/mcp", auth, express.json({ limit: "4mb" }), async (req, res) => {
   const server = new McpServer({ name: "instabox", version: VERSION });
   registerTools(server);
+  registerDesktopTools(server);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   res.on("close", () => {
     transport.close();
