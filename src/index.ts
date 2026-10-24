@@ -5,11 +5,11 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { config } from "./config.js";
-import { provider, passwordMatches, issueAuthorizationCode, loginPage } from "./auth.js";
+import { provider, passwordMatches, issueAuthorizationCode, loginPage, loginCsp } from "./auth.js";
 import { registerTools } from "./tools.js";
 import { registerDesktopTools } from "./desktop.js";
 
-const VERSION = process.env.APP_VERSION || "0.2.0";
+const VERSION = process.env.APP_VERSION || "0.2.1";
 const issuerUrl = new URL(config.publicUrl);
 const mcpUrl = new URL("/mcp", config.publicUrl);
 
@@ -42,6 +42,8 @@ app.post("/authorize/login", loginLimiter, express.urlencoded({ extended: false 
   }
   const { password, ...fields } = f;
   if (!passwordMatches(password ?? "")) {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Security-Policy", loginCsp(f.redirect_uri));
     res.status(401).type("html").send(loginPage(fields, "Wrong password"));
     return;
   }
