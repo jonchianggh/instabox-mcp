@@ -119,6 +119,16 @@ function issueTokens(clientId: string, scopes: string[], resource?: string): OAu
 }
 
 // ---------- Login page
+/** CSP for the login page. Browsers apply form-action to the redirect that follows the POST,
+ *  so the client's redirect_uri origin must be allowed or the browser silently drops it. */
+export function loginCsp(redirectUri?: string): string {
+  let origin = "";
+  try {
+    if (redirectUri) origin = " " + new URL(redirectUri).origin;
+  } catch {}
+  return `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'${origin}`;
+}
+
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export function loginPage(fields: Record<string, string>, error?: string): string {
@@ -146,7 +156,7 @@ export const provider: OAuthServerProvider = {
 
   async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: Response) {
     res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'");
+    res.setHeader("Content-Security-Policy", loginCsp(params.redirectUri));
     res.type("html").send(
       loginPage({
         client_id: client.client_id,
