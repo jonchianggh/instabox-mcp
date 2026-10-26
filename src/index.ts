@@ -7,9 +7,10 @@ import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middlew
 import { config } from "./config.js";
 import { provider, passwordMatches, issueAuthorizationCode, loginPage, loginCsp } from "./auth.js";
 import { registerTools } from "./tools.js";
+import { registerSecretTools } from "./secrets.js";
 import { registerDesktopTools } from "./desktop.js";
 
-const VERSION = process.env.APP_VERSION || "0.2.1";
+const VERSION = process.env.APP_VERSION || "0.3.0";
 const issuerUrl = new URL(config.publicUrl);
 const mcpUrl = new URL("/mcp", config.publicUrl);
 
@@ -27,6 +28,7 @@ app.use(
     issuerUrl,
     resourceServerUrl: mcpUrl,
     resourceName: "InstaBox MCP",
+    scopesSupported: ["mcp", "offline_access"], // ChatGPT wants offline_access advertised to keep refresh tokens
     clientRegistrationOptions: { clientSecretExpirySeconds: 0, clientIdGeneration: false },
   }),
 );
@@ -66,6 +68,7 @@ const auth = requireBearerAuth({ verifier: provider, resourceMetadataUrl: getOAu
 app.post("/mcp", auth, express.json({ limit: "4mb" }), async (req, res) => {
   const server = new McpServer({ name: "instabox", version: VERSION });
   registerTools(server);
+  registerSecretTools(server);
   registerDesktopTools(server);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   res.on("close", () => {
