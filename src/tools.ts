@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { api, waitForOperation, type Operation } from "./instabox.js";
+import { proxySelection, envSelection } from "./secrets.js";
 
 const text = (data: unknown) => ({
   content: [{ type: "text" as const, text: typeof data === "string" ? data : JSON.stringify(data, null, 2) }],
@@ -60,6 +61,8 @@ export function registerTools(server: McpServer) {
       autoSuspendAfterSeconds: z.number().int().optional(),
       metadata: z.record(z.string(), z.string()).optional().describe("String labels"),
       desiredState: z.enum(["running", "stopped"]).optional(),
+      secrets: proxySelection.optional(),
+      envSecrets: envSelection.optional(),
       wait: waitArg,
     },
     annotations: { openWorldHint: true },
