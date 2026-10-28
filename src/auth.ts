@@ -12,6 +12,7 @@ import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { OAuthClientInformationFull, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { InvalidGrantError, InvalidTokenError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { config } from "./config.js";
+import { getCimdClient, isCimdClientId } from "./cimd.js";
 
 type Kind = "client" | "code" | "access" | "refresh" | "secret";
 
@@ -38,6 +39,14 @@ function verify<T extends { exp?: number }>(kind: Kind, token: string): T | null
   }
 }
 
+/** Constant-time check of a presented bearer against MCP_BEARER_TOKEN. */
+export function staticBearerMatches(token: string): boolean {
+  if (!config.mcpBearerToken) return false;
+  const a = createHmac("sha256", "bearer").update(token).digest();
+  const b = createHmac("sha256", "bearer").update(config.mcpBearerToken).digest();
+  return timingSafeEqual(a, b);
+}
+
 export function passwordMatches(input: string): boolean {
   const a = createHmac("sha256", "pw").update(input).digest();
   const b = createHmac("sha256", "pw").update(config.authPassword).digest();
@@ -49,6 +58,7 @@ const now = () => Math.floor(Date.now() / 1000);
 // ---------- Clients (dynamic client registration, stored inside the client_id)
 const clientsStore: OAuthRegisteredClientsStore = {
   getClient(clientId) {
+    if (isCimdClientId(clientId)) return config.cimdEnabled ? getCimdClient(clientId) : undefined;
     const meta = verify<Omit<OAuthClientInformationFull, "client_id"> & { exp?: number }>("client", clientId);
     if (!meta) return undefined;
     const client: OAuthClientInformationFull = { ...meta, client_id: clientId };
@@ -129,6 +139,14 @@ export function loginCsp(redirectUri?: string): string {
   return `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'${origin}`;
 }
 
+const redirectHost = (uri?: string) => {
+  try {
+    return uri ? new URL(uri).host : "";
+  } catch {
+    return "";
+  }
+};
+
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export function loginPage(fields: Record<string, string>, error?: string): string {
@@ -143,7 +161,7 @@ p{color:#a1a1aa;font-size:.85rem;margin:0 0 1.25rem}input[type=password]{width:1
 button{margin-top:1rem;width:100%;padding:.7rem;border:0;border-radius:8px;background:#fafafa;color:#09090b;font-weight:600;font-size:1rem;cursor:pointer}
 .err{color:#f87171;margin-top:.75rem;font-size:.85rem}</style></head>
 <body><form method="post" action="/authorize/login">
-<h1>InstaBox MCP</h1><p>${esc(fields.client_name || "An MCP client")} wants to control your InstaBox machines.</p>
+<h1>InstaBox MCP</h1><p>${esc(fields.client_name || "An MCP client")} wants to control your InstaBox machines.${redirectHost(fields.redirect_uri) ? ` You'll be sent back to <b>${esc(redirectHost(fields.redirect_uri))}</b>.` : ""}</p>
 ${hidden}<input type="password" name="password" placeholder="Password" autofocus required>
 <button type="submit">Allow</button>${error ? `<div class="err">${esc(error)}</div>` : ""}</form></body></html>`;
 }
@@ -160,7 +178,9 @@ export const provider: OAuthServerProvider = {
     res.type("html").send(
       loginPage({
         client_id: client.client_id,
-        client_name: client.client_name ?? "",
+        client_name: isCimdClientId(client.client_id)
+          ? `${client.client_name ?? "An MCP client"} (${new URL(client.client_id).hostname})`
+          : (client.client_name ?? ""),
         redirect_uri: params.redirectUri,
         code_challenge: params.codeChallenge,
         state: params.state ?? "",
@@ -191,6 +211,9 @@ export const provider: OAuthServerProvider = {
   },
 
   async verifyAccessToken(token): Promise<AuthInfo> {
+    if (staticBearerMatches(token)) {
+      return { token, clientId: "static-bearer", scopes: ["mcp"], expiresAt: now() + 3600 };
+    }
     const p = verify<TokenPayload>("access", token);
     if (!p) throw new InvalidTokenError("Invalid or expired access token");
     return { token, clientId: p.cid, scopes: p.sc, expiresAt: p.exp, resource: p.res ? new URL(p.res) : undefined };
