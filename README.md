@@ -63,6 +63,9 @@ select them.
 | `PORT` | no | Default 3000 (Railway sets it) |
 | `ACCESS_TOKEN_TTL_SECONDS` / `REFRESH_TOKEN_TTL_SECONDS` | no | Default 1h / 30d |
 | `MAX_WAIT_SECONDS` | no | Default 45 |
+| `MCP_BEARER_TOKEN` | no | Static bearer (≥32 chars) that `/mcp` also accepts, for Claude Code, scripts and curl. Unset = OAuth only |
+| `CIMD_ENABLED` | no | Default `true`. Set `false` to stop advertising Client ID Metadata Documents, so clients use dynamic registration |
+| `CIMD_ALLOWED_HOSTS` | no | Comma-separated hosts allowed to serve client metadata (e.g. `claude.ai`, `*.example.com`). Empty = any public host |
 
 ## Deploy
 
@@ -85,8 +88,26 @@ since the app trusts exactly one `X-Forwarded-For` hop for the login rate limit.
 
 ## Connect a client
 
-The MCP URL is `https://<your-domain>/mcp`. Both clients register themselves (dynamic client
-registration) and pop up this server's login page, where you enter `AUTH_PASSWORD`.
+The MCP URL is `https://<your-domain>/mcp`. Clients identify themselves automatically and pop up
+this server's login page, where you enter `AUTH_PASSWORD`. The page shows the client's name and
+where it will send you back to, so check that before you type the password.
+
+Two ways of identifying are supported:
+
+- **Client ID Metadata Documents (CIMD)**, which Claude prefers: the client's `client_id` is an
+  HTTPS URL (e.g. `https://claude.ai/oauth/mcp-oauth-client-metadata`). The server fetches that
+  JSON once and caches it (5 min to 24 h, following `Cache-Control`). If a later refetch fails,
+  it keeps using the last good copy for up to 7 days. The fetch is
+  SSRF-guarded: https only, public IPs only (pinned against DNS rebinding), no redirects,
+  `application/json` only, 16 KB and 5 s limits. Claude Code's loopback callbacks
+  (`http://localhost:<any port>/callback`, `http://127.0.0.1:<any port>/callback`) match without the port.
+- **Dynamic client registration (DCR)**, the fallback, used by ChatGPT and older clients.
+
+If Claude's sign-in fails with `invalid_client ... Could not load client metadata document`, look
+for a `[cimd]` line in the server log. Cloudflare sometimes answers `403` to requests for
+claude.ai's metadata that come from datacenter IPs
+([anthropics/claude-ai-mcp#650](https://github.com/anthropics/claude-ai-mcp/issues/650)). Set
+`CIMD_ENABLED=false` and reconnect: Claude then falls back to DCR.
 
 **Claude.ai**: Settings → Connectors → Add custom connector → paste the URL. If asked, choose
 **Sign in now** and the **Register** auth client (not Claude identity, not an API key).
@@ -106,6 +127,19 @@ which leaves this server of little use there. ChatGPT freezes the tool list when
 created, so after upgrading the server, refresh the tools in workspace app settings (or recreate
 the plugin) to pick up new ones.
 
+**Claude Code**: OAuth works as-is (`claude mcp add --transport http instabox https://<your-domain>/mcp`,
+then `/mcp` to sign in). If you'd rather skip the browser, set `MCP_BEARER_TOKEN` and pass it as a header:
+
+    claude mcp add --transport http instabox https://<your-domain>/mcp \
+      --header "Authorization: Bearer $MCP_BEARER_TOKEN"
+
+**Scripts / curl** (needs `MCP_BEARER_TOKEN`):
+
+    curl -s https://<your-domain>/mcp \
+      -H "Authorization: Bearer $MCP_BEARER_TOKEN" \
+      -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+      -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+
 ## Local development
 
     npm install
@@ -118,5 +152,8 @@ Test with `npx @modelcontextprotocol/inspector` against `http://localhost:3000/m
 
 - Anyone who logs in can run commands on your machines, so use a long password.
   The login form is rate limited (10 tries per 15 min per IP).
+- `MCP_BEARER_TOKEN` never expires and skips the login page, so treat it like the password:
+  long, random, and rotated if it leaks (change the env var and restart). It is compared in
+  constant time. OAuth tokens keep working alongside it.
 - OAuth state is stateless (HMAC-signed with `TOKEN_SECRET`), so redeploys never sign you out.
 - Requires HTTPS in production; the OAuth library refuses a non-HTTPS issuer except on localhost.
