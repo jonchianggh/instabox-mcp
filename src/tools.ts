@@ -138,7 +138,15 @@ export function registerTools(server: McpServer) {
     description: "Read a text file (up to 256 KiB) or list a directory (up to 5000 entries) in a running machine.",
     inputSchema: { id: idArg, path: z.string().default("/data/home").describe("Absolute path") },
     annotations: readOnly,
-  }, handler(({ id, path }) => api("GET", `${m(id)}/files`, { query: { path } })));
+  }, handler(async ({ id, path }) => {
+    const machineId = id.startsWith("m_") ? id : (await api<{ id: string }>("GET", m(id))).id;
+    const data = await api<Record<string, unknown>>("GET", `${m(machineId)}/files`, { query: { path } });
+    if (data && Object.prototype.hasOwnProperty.call(data, "content")) {
+      const { content, ...metadata } = data;
+      return { ...metadata, text: content };
+    }
+    return data;
+  }));
 
   server.registerTool("write_file", {
     description: "Create or overwrite a text file in a running machine (up to 1 MiB). Parent folders are created.",
